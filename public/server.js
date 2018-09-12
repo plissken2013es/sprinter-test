@@ -13,6 +13,7 @@ const users = [];
 function findOpponent(user) {
 	for (let i = 0; i < users.length; i++) {
 		if (user !== users[i] && users[i].opponent === null && !users[i].ready) {
+            console.log(users[i].socket.id, users[i].ready);
 			new Game(user, users[i]).match();
 		}
 	}
@@ -107,7 +108,6 @@ class User {
 	end() {
 		this.game = null;
 		this.opponent = null;
-        this.ready = false;
 		this.socket.emit("end");
 	}
 
@@ -131,12 +131,16 @@ module.exports = {
         });
         
         socket.on("hit", ()=> {
-            console.log("user", socket.id, "HIT!");
+            console.log("user", socket.id, "HIT!", user.ready);
             if (user.opponent) user.opponent.socket.emit("opp_hit");
         });        
         socket.on("offline", ()=> {
             console.log("user", socket.id, "offline!");
             if (user.opponent) user.opponent.socket.emit("opp_off");
+        });        
+        socket.on("find", ()=> {
+            user.ready = false;
+            findOpponent(user);
         });   
         
         socket.on("win", ()=> {
@@ -150,7 +154,6 @@ module.exports = {
 			removeUser(user);
 			if (user.opponent) {
 				user.opponent.end();
-				findOpponent(user.opponent);
 			}
 		});
 

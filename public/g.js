@@ -203,12 +203,14 @@ class Game{
                 if (userHasLeft) {
                     gameState = STATE_WAIT;
                     userHasLeft = false;
+                    infoTexts = [{y: 119, t: "Waiting for opponent..."}];
+                    socket.emit("find");
                 } else {
                     gameState = STATE_WAIT_CONFIRM;
+                    infoTexts = [{y: 119, t: "Watch out..."}];
+                    socket.emit("ready");
                 }
                 initialPosForRunners();
-                infoTexts = [{y: 119, t: "Watch out..."}];
-                socket.emit("ready");
             }
         }
         
