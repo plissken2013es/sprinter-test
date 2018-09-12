@@ -14,25 +14,66 @@ class Game{
     }
 
     main() {
-        function initialPosForRunners() {
-            console.log(charSelect);
-            hero = kontra.sprite({
-                x: HERO_INIT_POS,
-                y: 75,
-                dx: 0,
-                name: "hero",
-                animations: runnerSheets[charSelect].animations,
-                update: characterUpdate
+        
+        function bindSocket() {
+            socket.on("match", () => {
+                console.log("server found an opponent for me!");
+                infoTexts = [{y: 119, t: "Press space when ready"}];
+                gameState = STATE_LAUNCH;
             });
-            hero.playAnimation("run_slow");
-            enemy = kontra.sprite({
-                x: ENEMY_INIT_POS,
-                y: 67,
-                name: "enemy",
-                animations: runnerSheets[(RND()*3)|0].animations,
-                update: characterUpdate
+            
+            socket.on("count", () => {
+                console.log("start countdown, man!");
+                countdownDT = 0;
+                countdownPos = 0;
+                infoTexts = [{y: 50, t: countdownMsg[countdownPos]}];
+                gameState = STATE_COUNT;
             });
-            enemy.playAnimation("run_slow");
+
+            socket.on("opp_hit", () => {
+                console.log("opponent HIT!");
+                isEnemyRunning = true;
+                setTimeout(function() {
+                    isEnemyRunning = false;
+                }.bind(this), 500);
+                enemy.dx = 2.2;
+            });
+
+            socket.on("__win", () => {
+                points.win++;
+                displayScore("You win!");
+            });
+
+            socket.on("__lose", () => {
+                points.lose++;
+                displayScore("You lose!");
+            });
+
+            socket.on("__draw", () => {
+                points.draw++;
+                displayScore("Draw!");
+            });
+
+            socket.on("__end", () => {
+                disableButtons();
+                setMessage("Waiting for opponent...");
+            });
+
+            socket.on("connect", () => {
+                console.log("socket connected");
+//                disableButtons();
+//                setMessage("Waiting for opponent...");
+            });
+
+            socket.on("disconnect", () => {
+//                disableButtons();
+//                setMessage("Connection lost!");
+            });
+
+            socket.on("error", () => {
+//                disableButtons();
+//                setMessage("Connection error!");
+            });
         }
         
         function characterUpdate(dt) {
@@ -61,54 +102,6 @@ class Game{
             }
         }
         
-        function onKeyPressed(k) {
-            k.preventDefault();
-            if (isOffline) return;
-            if (gameState == STATE_INTRO) {
-                charSelect = ["a", "s", "d"].indexOf(k.key);
-                if (charSelect >= 0) {
-                    gameState = STATE_LAUNCH;
-                    initialPosForRunners();
-                    infoTexts = [{y: 119, t: "Press space when ready"}];
-                    keysTexts = [];
-                }
-            }
-            if (gameState == STATE_LAUNCH && k.key == " ") {
-                gameState = STATE_COUNT;
-                countdownDT = 0;
-                countdownPos = 0;
-                infoTexts = [{y: 50, t: countdownMsg[countdownPos]}];
-            }
-            if (gameState == STATE_PLAY && !isHeroRunning) {
-                if (k.key == chosenKey) {
-                    isHeroRunning = true;
-                    chosenKeySpr.playAnimation("down");
-                    setTimeout(function() {
-                        generateNextKey();
-                        isHeroRunning = false;
-                    }.bind(this), 500);
-                    hero.dx = 2.2;
-                } else {
-                    isOffline = true;
-                    chosenKey = null;
-                    chosenKeySpr = null;
-                    keysTexts = [];
-                    setTimeout(function() {
-                        isOffline = false;
-                        generateNextKey();
-                    }.bind(this), 1500);
-                }
-            }
-            if (gameState == STATE_FINISH && k.key == " ") {
-                gameState = STATE_COUNT;
-                initialPosForRunners();
-                countdownDT = 0;
-                countdownPos = 0;
-                infoTexts = [{y: 50, t: countdownMsg[countdownPos]}];
-                keysTexts = [];
-            }
-        }
-        
         function generateNextKey() {
             if (gameState == STATE_FINISH) {
                 chosenKeySpr = null;
@@ -131,11 +124,85 @@ class Game{
                 s: 1.4
             }];
         }
-
-        let STATE_INTRO = 0, STATE_LAUNCH = 1, STATE_COUNT = 2, STATE_PLAY = 3, STATE_FINISH = 4;
+        
+        function initialPosForRunners() {
+            console.log(charSelect);
+            hero = kontra.sprite({
+                x: HERO_INIT_POS,
+                y: 75,
+                dx: 0,
+                name: "hero",
+                animations: runnerSheets[charSelect].animations,
+                update: characterUpdate
+            });
+            hero.playAnimation("run_slow");
+            enemy = kontra.sprite({
+                x: ENEMY_INIT_POS,
+                y: 67,
+                name: "enemy",
+                animations: runnerSheets[(RND()*3)|0].animations,
+                update: characterUpdate
+            });
+            enemy.playAnimation("run_slow");
+        }
+        
+        function onKeyPressed(k) {
+            k.preventDefault();
+            if (isOffline) return;
+            if (gameState == STATE_INTRO) {
+                charSelect = ["a", "s", "d"].indexOf(k.key);
+                if (charSelect >= 0) {
+                    gameState = STATE_WAIT;
+                    initialPosForRunners();
+                    infoTexts = [{y: 119, t: "Waiting for opponent..."}];
+                    keysTexts = [];
+                    
+                    socket = io({ upgrade: false, transports: ["websocket"] });
+                    bindSocket();
+                }
+            }
+            
+            if (gameState == STATE_LAUNCH && k.key == " ") {
+                gameState = STATE_WAIT_CONFIRM;
+                infoTexts = [{y: 119, t: "Watch out..."}];
+                socket.emit("ready");
+            }
+            
+            if (gameState == STATE_PLAY && !isHeroRunning) {
+                if (k.key == chosenKey) {
+                    isHeroRunning = true;
+                    chosenKeySpr.playAnimation("down");
+                    setTimeout(function() {
+                        generateNextKey();
+                        isHeroRunning = false;
+                    }.bind(this), 500);
+                    hero.dx = 2.2;
+                    socket.emit("hit");
+                } else {
+                    isOffline = true;
+                    chosenKey = null;
+                    chosenKeySpr = null;
+                    keysTexts = [];
+                    setTimeout(function() {
+                        isOffline = false;
+                        generateNextKey();
+                    }.bind(this), 1500);
+                }
+            }
+            if (gameState == STATE_FINISH && k.key == " ") {
+                gameState = STATE_COUNT;
+                initialPosForRunners();
+                countdownDT = 0;
+                countdownPos = 0;
+                infoTexts = [{y: 50, t: countdownMsg[countdownPos]}];
+                keysTexts = [];
+            }
+        }
+        
+        let STATE_INTRO = 1, STATE_WAIT = 2, STATE_LAUNCH = 3, STATE_WAIT_CONFIRM = 4, STATE_COUNT = 5, STATE_PLAY = 6, STATE_FINISH = 7;
         let HERO_INIT_POS = 20, ENEMY_INIT_POS = 28;
-        let M = Math, RND = M.random, CW = 192, CH = 128, ctx = kontra.context;
-        let gameState = STATE_INTRO, charSelect = 0, hero, enemy, blinkDT = 0, blink = true, chosenKey, chosenKeySpr, lastKeyPress, isHeroRunning = false, isOffline = false, countdownDT = 0, countdownPos = 0, countdownMsg = ["On your marks", "Get set","Go!"];
+        let M = Math, RND = M.random, CW = 192, CH = 128, ctx = kontra.context, socket;
+        let gameState = STATE_INTRO, charSelect = 0, hero, enemy, blinkDT = 0, blink = true, chosenKey, chosenKeySpr, lastKeyPress, isHeroRunning = false, isEnemyRunning = false, isOffline = false, countdownDT = 0, countdownPos = 0, countdownMsg = ["On your marks", "Get set","Go!"];
         
         let keysToBind = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"];
         for (var q=0; q<keysToBind.length; q++) {
@@ -386,4 +453,6 @@ class Game{
     }
 }
 
-let g = new Game();
+window.addEventListener("load", function() {
+    let g = new Game();
+}, false);

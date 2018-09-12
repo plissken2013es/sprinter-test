@@ -12,11 +12,8 @@ const users = [];
  */
 function findOpponent(user) {
 	for (let i = 0; i < users.length; i++) {
-		if (
-			user !== users[i] &&
-			users[i].opponent === null
-		) {
-			new Game(user, users[i]).start();
+		if (user !== users[i] && users[i].opponent === null) {
+			new Game(user, users[i]).match();
 		}
 	}
 }
@@ -44,12 +41,18 @@ class Game {
 	}
 
 	/**
-	 * Start new game
+	 * New game ready to be launched
 	 */
-	start() {
-		this.user1.start(this, this.user2);
-		this.user2.start(this, this.user1);
+	match() {
+		this.user1.match(this, this.user2);
+		this.user2.match(this, this.user1);
 	}
+    
+    // Launch countdown
+    count() {
+		this.user1.count(this, this.user2);
+		this.user2.count(this, this.user1);
+    }
 
 	/**
 	 * Is game ended
@@ -97,7 +100,7 @@ class User {
 		this.socket = socket;
 		this.game = null;
 		this.opponent = null;
-		this.guess = GUESS_NO;
+        this.ready = false;
 	}
 
 	/**
@@ -105,14 +108,6 @@ class User {
 	 * @param {number} guess
 	 */
 	setGuess(guess) {
-		if (
-			!this.opponent ||
-			guess <= GUESS_NO ||
-			guess > GUESS_SCISSORS
-		) {
-			return false;
-		}
-		this.guess = guess;
 		return true;
 	}
 
@@ -121,12 +116,17 @@ class User {
 	 * @param {Game} game
 	 * @param {User} opponent
 	 */
-	start(game, opponent) {
+	match(game, opponent) {
 		this.game = game;
 		this.opponent = opponent;
-		this.guess = GUESS_NO;
-		this.socket.emit("start");
+        this.ready = false;
+		this.socket.emit("match");
 	}
+    
+    // Launch a countdown
+    count(game, opponent) {
+        this.socket.emit("count");
+    }
 
 	/**
 	 * Terminate game
@@ -134,7 +134,6 @@ class User {
 	end() {
 		this.game = null;
 		this.opponent = null;
-		this.guess = GUESS_NO;
 		this.socket.emit("end");
 	}
 
@@ -170,7 +169,18 @@ module.exports = {
 	io: (socket) => {
 		const user = new User(socket);
 		users.push(user);
-		findOpponent(user);
+        findOpponent(user); 
+        
+        socket.on("ready", ()=> {
+            console.log("user", socket.id, "ready");
+            user.ready = true;
+            if (user.opponent.ready) user.game.count();
+        });
+        
+        socket.on("hit", ()=> {
+            console.log("user", socket.id, "HIT!");
+            if (user.opponent) user.opponent.socket.emit("opp_hit");
+        });
 
 		socket.on("disconnect", () => {
 			console.log("Disconnected: " + socket.id);

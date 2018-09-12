@@ -56,9 +56,8 @@
      */
     function bind() {
 
-        socket.on("start", () => {
-            enableButtons();
-            setMessage("Round " + (points.win + points.lose + points.draw + 1));
+        socket.on("match", () => {
+            console.log("MATCH received from server");
         });
 
         socket.on("win", () => {
