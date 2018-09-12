@@ -17,12 +17,14 @@ class Game{
         
         function bindSocket() {
             socket.on("match", () => {
+                if (gameState != STATE_WAIT) return;
                 console.log("server found an opponent for me!");
                 infoTexts = [{y: 119, t: "Press space when ready"}];
                 gameState = STATE_LAUNCH;
             });
             
             socket.on("count", () => {
+                if (gameState != STATE_WAIT_CONFIRM) return;
                 console.log("start countdown, man!");
                 countdownDT = 0;
                 countdownPos = 0;
@@ -31,6 +33,7 @@ class Game{
             });
 
             socket.on("opp_hit", () => {
+                if (gameState != STATE_PLAY) return;
                 console.log("opponent HIT!");
                 isEnemyRunning = true;
                 setTimeout(function() {
@@ -39,40 +42,45 @@ class Game{
                 enemy.dx = 2.2;
             });
 
-            socket.on("__win", () => {
-                points.win++;
-                displayScore("You win!");
+            socket.on("opp_off", () => {
+                if (gameState != STATE_PLAY) return;
+                console.log("opponent OFFLINE!");
+                enemy.isOffline = true;
+                setTimeout(function() {
+                    enemy.isOffline = false;
+                }.bind(this), 1500);
             });
 
-            socket.on("__lose", () => {
-                points.lose++;
-                displayScore("You lose!");
+            socket.on("opp_win", () => {
+                if (gameState != STATE_PLAY) return;
+                console.log("received opponent VICTORY!");
+                gameState = STATE_FINISH;
+                chosenKeySpr = null;
+                keysTexts = [];
+                infoTexts = [
+                    {y: 50, t: "Your opponent won!"},
+                    {y: 119, t: "Press space to play again"}
+                ];
             });
 
-            socket.on("__draw", () => {
-                points.draw++;
-                displayScore("Draw!");
-            });
-
-            socket.on("__end", () => {
-                disableButtons();
-                setMessage("Waiting for opponent...");
-            });
-
-            socket.on("connect", () => {
-                console.log("socket connected");
-//                disableButtons();
-//                setMessage("Waiting for opponent...");
+            socket.on("end", () => {
+                console.log("Your opponent has left!");
+                infoTexts = [
+                    {y: 50, t: "Your opponent has left!"}
+                ];
+                userHasLeft = true;
             });
 
             socket.on("disconnect", () => {
-//                disableButtons();
-//                setMessage("Connection lost!");
+                infoTexts = [
+                    {y: 50, t: "Connection lost!"}
+                ];
             });
 
             socket.on("error", () => {
-//                disableButtons();
-//                setMessage("Connection error!");
+                infoTexts = [
+                    {y: 50, t: "Connection error!"}
+                ];
             });
         }
         
@@ -84,7 +92,7 @@ class Game{
                     this.dx = 0.1;
                 }
             }
-            if (gameState == STATE_FINISH || (isOffline && this.name == "hero")) {
+            if (gameState == STATE_FINISH || this.isOffline) {
                 this.ddx = 0;
                 this.dx = 0;
                 this.x = this.x | 0;
@@ -99,6 +107,7 @@ class Game{
                     {y: 50, t: this.name == "hero" ? "You win!" : "Your opponent won!"},
                     {y: 119, t: "Press space to play again"}
                 ];
+                if (this.name == "hero") socket.emit("win");
             }
         }
         
@@ -148,7 +157,7 @@ class Game{
         
         function onKeyPressed(k) {
             k.preventDefault();
-            if (isOffline) return;
+            if (hero && hero.isOffline) return;
             if (gameState == STATE_INTRO) {
                 charSelect = ["a", "s", "d"].indexOf(k.key);
                 if (charSelect >= 0) {
@@ -179,30 +188,34 @@ class Game{
                     hero.dx = 2.2;
                     socket.emit("hit");
                 } else {
-                    isOffline = true;
+                    hero.isOffline = true;
                     chosenKey = null;
                     chosenKeySpr = null;
                     keysTexts = [];
                     setTimeout(function() {
-                        isOffline = false;
+                        hero.isOffline = false;
                         generateNextKey();
                     }.bind(this), 1500);
+                    socket.emit("offline");
                 }
             }
             if (gameState == STATE_FINISH && k.key == " ") {
-                gameState = STATE_COUNT;
+                if (userHasLeft) {
+                    gameState = STATE_WAIT;
+                    userHasLeft = false;
+                } else {
+                    gameState = STATE_WAIT_CONFIRM;
+                }
                 initialPosForRunners();
-                countdownDT = 0;
-                countdownPos = 0;
-                infoTexts = [{y: 50, t: countdownMsg[countdownPos]}];
-                keysTexts = [];
+                infoTexts = [{y: 119, t: "Watch out..."}];
+                socket.emit("ready");
             }
         }
         
         let STATE_INTRO = 1, STATE_WAIT = 2, STATE_LAUNCH = 3, STATE_WAIT_CONFIRM = 4, STATE_COUNT = 5, STATE_PLAY = 6, STATE_FINISH = 7;
         let HERO_INIT_POS = 20, ENEMY_INIT_POS = 28;
-        let M = Math, RND = M.random, CW = 192, CH = 128, ctx = kontra.context, socket;
-        let gameState = STATE_INTRO, charSelect = 0, hero, enemy, blinkDT = 0, blink = true, chosenKey, chosenKeySpr, lastKeyPress, isHeroRunning = false, isEnemyRunning = false, isOffline = false, countdownDT = 0, countdownPos = 0, countdownMsg = ["On your marks", "Get set","Go!"];
+        let M = Math, RND = M.random, CW = 192, CH = 128, ctx = kontra.context, socket, userHasLeft = false;
+        let gameState = STATE_INTRO, charSelect = 0, hero, enemy, blinkDT = 0, blink = true, chosenKey, chosenKeySpr, lastKeyPress, isHeroRunning = false, isEnemyRunning = false, countdownDT = 0, countdownPos = 0, countdownMsg = ["On your marks", "Get set","Go!"];
         
         let keysToBind = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"];
         for (var q=0; q<keysToBind.length; q++) {
@@ -389,7 +402,7 @@ class Game{
                     if (chosenKeySpr) chosenKeySpr.update();
                 }
                 
-                if (gameState == STATE_PLAY && isOffline) {
+                if (gameState == STATE_PLAY && hero.isOffline) {
                     offline.x = hero.x;
                     offline.y = hero.y - 25;
                 }
@@ -431,7 +444,7 @@ class Game{
                     if (chosenKeySpr) chosenKeySpr.render();
                 }
                 
-                if (gameState == STATE_PLAY && isOffline) {
+                if (gameState == STATE_PLAY && hero.isOffline) {
                     offline.render();
                 }
                 

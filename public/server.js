@@ -12,7 +12,7 @@ const users = [];
  */
 function findOpponent(user) {
 	for (let i = 0; i < users.length; i++) {
-		if (user !== users[i] && users[i].opponent === null) {
+		if (user !== users[i] && users[i].opponent === null && !users[i].ready) {
 			new Game(user, users[i]).match();
 		}
 	}
@@ -53,38 +53,11 @@ class Game {
 		this.user1.count(this, this.user2);
 		this.user2.count(this, this.user1);
     }
-
-	/**
-	 * Is game ended
-	 * @return {boolean}
-	 */
-	ended() {
-		return this.user1.guess !== GUESS_NO && this.user2.guess !== GUESS_NO;
-	}
-
-	/**
-	 * Final score
-	 */
-	score() {
-		if (
-			this.user1.guess === GUESS_ROCK && this.user2.guess === GUESS_SCISSORS ||
-			this.user1.guess === GUESS_PAPER && this.user2.guess === GUESS_ROCK ||
-			this.user1.guess === GUESS_SCISSORS && this.user2.guess === GUESS_PAPER
-		) {
-			this.user1.win();
-			this.user2.lose();
-		} else if (
-			this.user2.guess === GUESS_ROCK && this.user1.guess === GUESS_SCISSORS ||
-			this.user2.guess === GUESS_PAPER && this.user1.guess === GUESS_ROCK ||
-			this.user2.guess === GUESS_SCISSORS && this.user1.guess === GUESS_PAPER
-		) {
-			this.user2.win();
-			this.user1.lose();
-		} else {
-			this.user1.draw();
-			this.user2.draw();
-		}
-	}
+   
+    reset() {
+        this.user1.ready = false;
+        this.user2.ready = false;
+    }
 
 }
 
@@ -134,28 +107,8 @@ class User {
 	end() {
 		this.game = null;
 		this.opponent = null;
+        this.ready = false;
 		this.socket.emit("end");
-	}
-
-	/**
-	 * Trigger win event
-	 */
-	win() {
-		this.socket.emit("win", this.opponent.guess);
-	}
-
-	/**
-	 * Trigger lose event
-	 */
-	lose() {
-		this.socket.emit("lose", this.opponent.guess);
-	}
-
-	/**
-	 * Trigger draw event
-	 */
-	draw() {
-		this.socket.emit("draw", this.opponent.guess);
 	}
 
 }
@@ -174,12 +127,22 @@ module.exports = {
         socket.on("ready", ()=> {
             console.log("user", socket.id, "ready");
             user.ready = true;
-            if (user.opponent.ready) user.game.count();
+            if (user.opponent && user.opponent.ready) user.game.count();
         });
         
         socket.on("hit", ()=> {
             console.log("user", socket.id, "HIT!");
             if (user.opponent) user.opponent.socket.emit("opp_hit");
+        });        
+        socket.on("offline", ()=> {
+            console.log("user", socket.id, "offline!");
+            if (user.opponent) user.opponent.socket.emit("opp_off");
+        });   
+        
+        socket.on("win", ()=> {
+            console.log("user", socket.id, "WON!");
+            if (user.game) user.game.reset();
+            if (user.opponent) user.opponent.socket.emit("opp_win");
         });
 
 		socket.on("disconnect", () => {
@@ -188,17 +151,6 @@ module.exports = {
 			if (user.opponent) {
 				user.opponent.end();
 				findOpponent(user.opponent);
-			}
-		});
-
-		socket.on("guess", (guess) => {
-			console.log("Guess: " + socket.id);
-			if (user.setGuess(guess) && user.game.ended()) {
-				user.game.score();
-				user.game.start();
-				storage.get('games', 0).then(games => {
-					storage.set('games', games + 1);
-				});
 			}
 		});
 
