@@ -1,3 +1,7 @@
+# Key Sprinter 13k
+
+## Connected to Heroku. Don't erase it.
+
 # js13kgames.com Game Server
 
 Game server for the [js13kGames Competition](http://js13kgames.com/).
